@@ -7536,7 +7536,7 @@ THREE.EventDispatcher.prototype = {
 
 	function intersectObject( object, raycaster, intersects, recursive ) {
 
-		if ( object.visible === false ) return;
+		// if ( object.visible === false ) return; // i need test intersections with colliders!
 
 		object.raycast( raycaster, intersects );
 

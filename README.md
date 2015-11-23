@@ -31,7 +31,7 @@ This code creates a scene, a camera, and a geometric cube, and it adds the cube 
 	function init() {
 
 		scene = new THREE.Scene();
-		
+
 		camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 10000 );
 		camera.position.z = 1000;
 
