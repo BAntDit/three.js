@@ -112,9 +112,7 @@ THREE.OrbitControls = function ( object, domElement ) {
 	};
 
 	// this method is exposed, but perhaps it would be better if we can make it private...
-	// dt - frame time
-	this.update = function(dt) {
-		dt = dt || 0.02;
+	this.update = function() {
 
 		var offset = new THREE.Vector3();
 
@@ -160,15 +158,7 @@ THREE.OrbitControls = function ( object, domElement ) {
 			// restrict phi to be betwee EPS and PI-EPS
 			phi = Math.max( EPS, Math.min( Math.PI - EPS, phi ) );
 
-			var radius = offset.length();
-
-			if (!scope.enableDamping || destination < 0) {
-				radius *= scale;
-				destination = radius;
-			}
-			else {
-				radius = (1 - scope.dampingFactor * dt) * radius + scope.dampingFactor * dt * destination;
-			}
+			var radius = offset.length() * scale;
 
 			// restrict radius to be between desired limits
 			radius = Math.max( scope.minDistance, Math.min( scope.maxDistance, radius ) );
@@ -270,7 +260,6 @@ THREE.OrbitControls = function ( object, domElement ) {
 	var phiDelta = 0;
 	var thetaDelta = 0;
 	var scale = 1;
-	var destination = -1;
 	var panOffset = new THREE.Vector3();
 	var zoomChanged = false;
 
@@ -395,12 +384,6 @@ THREE.OrbitControls = function ( object, domElement ) {
 
 			scale /= dollyScale;
 
-			var position = this.object.position;
-
-        	offset.copy( position ).sub( this.target );
-
-        	destination = offset.length() * scale;
-
 		} else if ( scope.object instanceof THREE.OrthographicCamera ) {
 
 			scope.object.zoom = Math.max( scope.minZoom, Math.min( scope.maxZoom, scope.object.zoom * dollyScale ) );
@@ -421,12 +404,6 @@ THREE.OrbitControls = function ( object, domElement ) {
 		if ( scope.object instanceof THREE.PerspectiveCamera ) {
 
 			scale *= dollyScale;
-
-			var position = this.object.position;
-
-        	offset.copy( position ).sub( this.target );
-
-        	destination = offset.length() * scale;
 
 		} else if ( scope.object instanceof THREE.OrthographicCamera ) {
 
