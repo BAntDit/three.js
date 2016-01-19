@@ -25102,7 +25102,7 @@ THREE.WebGLBufferRenderer = function ( _gl, extensions, _infoRender ) {
 
 	}
 
-	function renderInstances( geometry ) {
+	function renderInstances( geometry, start, count ) {
 
 		var extension = extensions.get( 'ANGLE_instanced_arrays' );
 
@@ -25117,11 +25117,11 @@ THREE.WebGLBufferRenderer = function ( _gl, extensions, _infoRender ) {
 
 		if ( position instanceof THREE.InterleavedBufferAttribute ) {
 
-			extension.drawArraysInstancedANGLE( mode, 0, position.data.count, geometry.maxInstancedCount );
+			extension.drawArraysInstancedANGLE( mode, start, count, geometry.maxInstancedCount );
 
 		} else {
 
-			extension.drawArraysInstancedANGLE( mode, 0, position.count, geometry.maxInstancedCount );
+			extension.drawArraysInstancedANGLE( mode, start, count, geometry.maxInstancedCount );
 
 		}
 
