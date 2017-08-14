@@ -159,9 +159,17 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 		}
 
+		var multisampling = renderTarget.samples > 0 && _isWebGL2;
+
 		if ( renderTarget.depthTexture ) {
 
 			renderTarget.depthTexture.dispose();
+
+			if ( multisampling ) {
+
+				_gl.deleteRenderbuffer( renderTargetProperties.__webglMultisampleDepthbuffer );
+
+			}
 
 		}
 
@@ -172,12 +180,26 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 				_gl.deleteFramebuffer( renderTargetProperties.__webglFramebuffer[ i ] );
 				if ( renderTargetProperties.__webglDepthbuffer ) _gl.deleteRenderbuffer( renderTargetProperties.__webglDepthbuffer[ i ] );
 
+				if ( multisampling ) {
+
+					_gl.deleteFramebuffer( renderTargetProperties.__webglMultisampleFramebuffer[ i ] );
+					_gl.deleteRenderbuffer( renderTargetProperties.__webglRenderBuffer[ i ] );
+
+				}
+
 			}
 
 		} else {
 
 			_gl.deleteFramebuffer( renderTargetProperties.__webglFramebuffer );
 			if ( renderTargetProperties.__webglDepthbuffer ) _gl.deleteRenderbuffer( renderTargetProperties.__webglDepthbuffer );
+
+			if ( multisampling ) {
+
+				_gl.deleteFramebuffer( renderTargetProperties.__webglMultisampleFramebuffer );
+				_gl.deleteRenderbuffer( renderTargetProperties.__webglRenderBuffer );
+
+			}
 
 		}
 
@@ -586,19 +608,52 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 	}
 
+	function setupFrameBufferMultisampleRenderBuffer( renderTarget, attachment, multisanpleRenderBuffer, multisampleFramebuffer ) {
+
+		var glFormat = utils.convert( renderTarget.texture.format );
+
+		_gl.bindRenderbuffer( _gl.RENDERBUFFER, multisanpleRenderBuffer );
+		_gl.renderbufferStorageMultisample( _gl.RENDERBUFFER, renderTarget.samples, glFormat, renderTarget.width, renderTarget.height );
+		_gl.bindRenderbuffer( _gl.RENDERBUFFER, null );
+
+
+		_gl.bindFramebuffer( _gl.FRAMEBUFFER, multisampleFramebuffer );
+		_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, attachment, _gl.RENDERBUFFER, multisanpleRenderBuffer );
+		_gl.bindFramebuffer( _gl.FRAMEBUFFER, null );
+
+	}
+
 	// Setup storage for internal depth/stencil buffers and bind to correct framebuffer
 	function setupRenderBufferStorage( renderbuffer, renderTarget ) {
+
+		var multisampling = renderTarget.samples > 0 && _isWebGL2;
 
 		_gl.bindRenderbuffer( _gl.RENDERBUFFER, renderbuffer );
 
 		if ( renderTarget.depthBuffer && ! renderTarget.stencilBuffer ) {
 
-			_gl.renderbufferStorage( _gl.RENDERBUFFER, _gl.DEPTH_COMPONENT16, renderTarget.width, renderTarget.height );
+			if ( multisampling ) {
+
+				_gl.renderbufferStorageMultisample( _gl.RENDERBUFFER, renderTarget.samples, _gl.DEPTH_COMPONENT16, renderTarget.width, renderTarget.height );
+
+			} else {
+
+				_gl.renderbufferStorage( _gl.RENDERBUFFER, _gl.DEPTH_COMPONENT16, renderTarget.width, renderTarget.height );
+
+			}
 			_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_ATTACHMENT, _gl.RENDERBUFFER, renderbuffer );
 
 		} else if ( renderTarget.depthBuffer && renderTarget.stencilBuffer ) {
 
-			_gl.renderbufferStorage( _gl.RENDERBUFFER, _gl.DEPTH_STENCIL, renderTarget.width, renderTarget.height );
+			if ( multisampling ) {
+
+				_gl.renderbufferStorageMultisample( _gl.RENDERBUFFER, renderTarget.samples, _gl.DEPTH_STENCIL, renderTarget.width, renderTarget.height );
+
+			} else {
+
+				_gl.renderbufferStorage( _gl.RENDERBUFFER, _gl.DEPTH_STENCIL, renderTarget.width, renderTarget.height );
+
+			}
 			_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_STENCIL_ATTACHMENT, _gl.RENDERBUFFER, renderbuffer );
 
 		} else {
@@ -655,6 +710,65 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 	}
 
+	function setupMultisampleDepthBuffer( framebuffer, renderTarget ) {
+
+		var isCube = ( renderTarget && renderTarget.isWebGLRenderTargetCube );
+		if ( isCube ) throw new Error( 'Depth Texture with cube render targets is not supported' );
+
+		var renderTargetProperties = properties.get( renderTarget );
+
+		_gl.bindFramebuffer( _gl.FRAMEBUFFER, framebuffer );
+
+		if ( !( renderTarget.depthTexture && renderTarget.depthTexture.isDepthTexture ) ) {
+
+			throw new Error( 'renderTarget.depthTexture must be an instance of THREE.DepthTexture' );
+
+		}
+
+		// ouh, boy...
+		// definitely needs better helpers for work with formats and internalFormats then we have for now
+
+		// in this point we can be sure that it is in webgl 2.0 context
+
+		var internalFormat = _gl.DEPTH_COMPONENT16;
+
+		if ( renderTarget.depthTexture.type === FloatType ) {
+
+			internalFormat = _gl.DEPTH_COMPONENT32F;
+
+		}
+
+		// Depth stencil textures need the DEPTH_STENCIL internal format
+		// (https://www.khronos.org/registry/webgl/extensions/WEBGL_depth_texture/)
+		if ( renderTarget.depthTexture.format === DepthStencilFormat ) {
+
+			internalFormat = _gl.DEPTH_STENCIL;
+
+		}
+
+		renderTargetProperties.__webglMultisampleDepthbuffer = _gl.createRenderbuffer();
+
+		_gl.bindRenderbuffer( _gl.RENDERBUFFER, renderTargetProperties.__webglMultisampleDepthbuffer );
+
+		_gl.renderbufferStorageMultisample( _gl.RENDERBUFFER, renderTarget.samples, internalFormat, renderTarget.width, renderTarget.height );
+
+		if ( renderTarget.depthBuffer && ! renderTarget.stencilBuffer ) {
+
+			_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_ATTACHMENT, _gl.RENDERBUFFER, renderTargetProperties.__webglMultisampleDepthbuffer );
+
+		} else if ( renderTarget.depthBuffer && renderTarget.stencilBuffer ) {
+
+			_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_STENCIL_ATTACHMENT, _gl.RENDERBUFFER, renderTargetProperties.__webglMultisampleDepthbuffer );
+
+		} else {
+			// it must be inpossible, when render target has depthTexture, but depthBuffer is false
+			// maybe here have to be console.assert
+		}
+
+		_gl.bindRenderbuffer( _gl.RENDERBUFFER, null );
+
+	}
+
 	// Setup GL resources for a non-texture depth buffer
 	function setupDepthRenderbuffer( renderTarget ) {
 
@@ -662,11 +776,19 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 		var isCube = ( renderTarget.isWebGLRenderTargetCube === true );
 
+		var multisampling = renderTarget.samples > 0 && _isWebGL2;
+
 		if ( renderTarget.depthTexture ) {
 
 			if ( isCube ) throw new Error( 'target.depthTexture not supported in Cube render targets' );
 
 			setupDepthTexture( renderTargetProperties.__webglFramebuffer, renderTarget );
+
+			if ( multisampling ) {
+
+				setupMultisampleDepthBuffer( renderTargetProperties.__webglMultisampleFramebuffer, renderTarget );
+
+			}
 
 		} else {
 
@@ -676,7 +798,16 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 				for ( var i = 0; i < 6; i ++ ) {
 
-					_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglFramebuffer[ i ] );
+					if ( multisampling ) {
+
+						_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer[ i ] );
+
+					} else {
+
+						_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglFramebuffer[ i ] );
+
+					}
+
 					renderTargetProperties.__webglDepthbuffer[ i ] = _gl.createRenderbuffer();
 					setupRenderBufferStorage( renderTargetProperties.__webglDepthbuffer[ i ], renderTarget );
 
@@ -684,7 +815,16 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 			} else {
 
-				_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglFramebuffer );
+				if ( multisampling ) {
+
+					_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer );
+
+				} else {
+
+					_gl.bindFramebuffer( _gl.FRAMEBUFFER, renderTargetProperties.__webglFramebuffer );
+
+				}
+
 				renderTargetProperties.__webglDepthbuffer = _gl.createRenderbuffer();
 				setupRenderBufferStorage( renderTargetProperties.__webglDepthbuffer, renderTarget );
 
@@ -711,21 +851,71 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 		var isCube = ( renderTarget.isWebGLRenderTargetCube === true );
 		var isTargetPowerOfTwo = isPowerOfTwo( renderTarget );
 
+		var multisampling = false;
+
+		if ( renderTarget.samples > 0 ) {
+
+			if ( _isWebGL2 ) {
+
+				multisampling = true;
+
+				if ( isCube ) {
+
+					renderTargetProperties.__webglRenderBuffer = [];
+
+					for ( var i = 0; i < 6; i ++ ) {
+
+						renderTargetProperties.__webglRenderBuffer[ i ] = _gl.createRenderbuffer();
+
+					}
+
+				} else {
+
+					renderTargetProperties.__webglRenderBuffer = _gl.createRenderbuffer();
+
+				}
+
+			} else {
+
+				throw new Error( 'multisampling is not supported in webgl 1.0 context' );
+
+			}
+
+		}
+
 		// Setup framebuffer
 
 		if ( isCube ) {
 
 			renderTargetProperties.__webglFramebuffer = [];
 
+			if ( multisampling ) {
+
+				renderTargetProperties.__webglMultisampleFramebuffer = [];
+
+			}
+
 			for ( var i = 0; i < 6; i ++ ) {
 
 				renderTargetProperties.__webglFramebuffer[ i ] = _gl.createFramebuffer();
+
+				if ( multisampling ) {
+
+					renderTargetProperties.__webglMultisampleFramebuffer[ i ] = _gl.createFramebuffer();
+
+				}
 
 			}
 
 		} else {
 
 			renderTargetProperties.__webglFramebuffer = _gl.createFramebuffer();
+
+			if ( multisampling ) {
+
+				renderTargetProperties.__webglMultisampleFramebuffer = _gl.createFramebuffer();
+
+			}
 
 		}
 
@@ -756,11 +946,120 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 
 		}
 
+		if ( multisampling ) {
+
+			// Setup render buffers
+
+			if ( isCube ) {
+
+				for ( var i = 0; i < 6; i ++ ) {
+
+					setupFrameBufferMultisampleRenderBuffer( renderTarget,
+						_gl.COLOR_ATTACHMENT0,
+						renderTargetProperties.__webglRenderBuffer[ i ],
+						renderTargetProperties.__webglMultisampleFramebuffer[ i ] );
+
+				}
+
+			} else {
+
+				setupFrameBufferMultisampleRenderBuffer( renderTarget,
+					_gl.COLOR_ATTACHMENT0,
+					renderTargetProperties.__webglRenderBuffer,
+					renderTargetProperties.__webglMultisampleFramebuffer );
+
+			}
+
+		}
+
 		// Setup depth and stencil buffers
 
 		if ( renderTarget.depthBuffer ) {
 
 			setupDepthRenderbuffer( renderTarget );
+
+		}
+
+	}
+
+	function blitFramebuffer( renderTarget ) {
+
+		if ( ! _isWebGL2 ) {
+
+			return;
+
+		}
+
+		var isCube = ( renderTarget && renderTarget.isWebGLRenderTargetCube );
+
+		var renderTargetProperties = properties.get( renderTarget );
+
+		if ( isCube ) {
+
+			_gl.bindFramebuffer( _gl.READ_FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer[ renderTarget.activeCubeFace ] );
+			_gl.readBuffer( _gl.COLOR_ATTACHMENT0 );
+
+			_gl.bindFramebuffer( _gl.DRAW_FRAMEBUFFER, renderTargetProperties.__webglFramebuffer[ renderTarget.activeCubeFace ] );
+			_gl.drawBuffers( [ _gl.COLOR_ATTACHMENT0 ] );
+
+		} else {
+
+			_gl.bindFramebuffer( _gl.READ_FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer );
+			_gl.readBuffer( _gl.COLOR_ATTACHMENT0 );
+
+			_gl.bindFramebuffer( _gl.DRAW_FRAMEBUFFER, renderTargetProperties.__webglFramebuffer );
+			_gl.drawBuffers( [ _gl.COLOR_ATTACHMENT0 ] );
+
+		}
+
+		_gl.blitFramebuffer(
+			0, 0, renderTarget.width, renderTarget.height,
+			0, 0, renderTarget.width, renderTarget.height,
+			_gl.COLOR_BUFFER_BIT,
+			_gl.NEAREST );
+
+		if ( renderTarget.depthTexture ) {
+
+			if ( isCube ) {
+
+				return;
+
+			}
+
+			if ( renderTarget.depthBuffer && renderTarget.stencilBuffer ) {
+
+				_gl.bindFramebuffer( _gl.READ_FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer );
+				_gl.readBuffer( _gl.DEPTH_STENCIL_ATTACHMENT );
+
+				_gl.bindFramebuffer( _gl.DRAW_FRAMEBUFFER, renderTargetProperties.__webglFramebuffer );
+				_gl.drawBuffers( [ _gl.DEPTH_STENCIL_ATTACHMENT ] );
+
+				_gl.blitFramebuffer(
+					0, 0, renderTarget.width, renderTarget.height,
+					0, 0, renderTarget.width, renderTarget.height,
+					_gl.DEPTH_BUFFER_BIT | _gl.STENCIL_BUFFER_BIT,
+					_gl.NEAREST );
+
+			} else if ( renderTarget.depthBuffer && ! renderTarget.stencilBuffer ) {
+
+				_gl.bindFramebuffer( _gl.READ_FRAMEBUFFER, renderTargetProperties.__webglMultisampleFramebuffer );
+				_gl.readBuffer( _gl.DEPTH_ATTACHMENT );
+
+				_gl.bindFramebuffer( _gl.DRAW_FRAMEBUFFER, renderTargetProperties.__webglFramebuffer );
+				_gl.drawBuffers( [ _gl.DEPTH_ATTACHMENT ] );
+
+				_gl.blitFramebuffer(
+					0, 0, renderTarget.width, renderTarget.height,
+					0, 0, renderTarget.width, renderTarget.height,
+					_gl.DEPTH_BUFFER_BIT,
+					_gl.NEAREST );
+
+			} else {
+
+				// no way
+				return;
+
+			}
 
 		}
 
@@ -789,6 +1088,7 @@ function WebGLTextures( _gl, extensions, state, properties, capabilities, utils,
 	this.setTextureCubeDynamic = setTextureCubeDynamic;
 	this.setupRenderTarget = setupRenderTarget;
 	this.updateRenderTargetMipmap = updateRenderTargetMipmap;
+	this.blitFramebuffer = blitFramebuffer;
 
 }
 
