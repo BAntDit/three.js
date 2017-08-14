@@ -1,0 +1,376 @@
+    <!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - render-to-texture with multisampling</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				color: #ffffff;
+				font-family:Monospace;
+				font-size:13px;
+				text-align:center;
+				font-weight: bold;
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+			}
+
+			#info {
+				position: absolute;
+				top: 0px; width: 100%;
+				padding: 5px;
+			}
+
+			a {
+				color: #ffffff;
+			}
+
+		</style>
+	</head>
+	<body>
+
+		<div id="container"></div>
+		<div id="info"><a href="http://threejs.org" target="_blank" rel="noopener">three.js</a> render-to-texture with multisampling webgl example</div>
+
+		<script src="../build/three.js"></script>
+
+		<script src="js/libs/stats.min.js"></script>
+
+        <script id="displayVertexShader" type="x-shader/x-vertex">#version 300 es
+            precision highp float;
+            precision highp int;
+
+            layout(location = 0) in vec2 position;
+
+            uniform mat3 posTransform;
+
+            uniform vec4 uvTransform;
+
+            out vec2 vUv;
+
+			void main() {
+
+				vUv = position * uvTransform.xy + uvTransform.zw;
+
+                gl_Position.xyz = posTransform * vec3(position, 1.0);
+                gl_Position.w = 1.0;
+
+			}
+
+        </script>
+
+        <script id="displayFragmentShader" type="x-shader/x-fragment">#version 300 es
+            precision highp float;
+            precision highp int;
+
+            in vec2 vUv;
+
+            out vec4 fragColor;
+
+			void main() {
+
+				fragColor.rgb = vec3(vUv, 0.0);
+                fragColor.a = 1.0;
+
+			}
+
+		</script>
+
+		<script>
+
+            var container;
+            var camera;
+
+            var scene;
+            var sceneScreen;
+
+            var renderer;
+
+            var multisampleRT;
+            var noMultisampleRT;
+
+            var screenSpacePlaneBuffer;
+
+			init();
+            animate();
+
+			function init() {
+
+				container = document.getElementById( 'container' );
+
+				camera = new THREE.PerspectiveCamera( 30, window.innerWidth / window.innerHeight, 1, 1000 );
+                camera.position.z = 100;
+
+                // create render target as usual
+				noMultisampleRT = new THREE.WebGLRenderTarget(window.innerWidth * 0.5, window.innerHeight * 0.5, { minFilter: THREE.LinearFilter, magFilter: THREE.NearestFilter, format: THREE.RGBFormat } );
+
+                // and with multisampling support
+                multisampleRT = new THREE.WebGLRenderTarget(window.innerWidth * 0.5, window.innerHeight * 0.5, { samples: 4, minFilter: THREE.LinearFilter, magFilter: THREE.NearestFilter, format: THREE.RGBFormat } );
+
+                // test displays
+                screenSpacePlaneGeometry = new THREE.BufferGeometry();
+
+                var positions = new Float32Array([-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0]);
+
+                screenSpacePlaneGeometry.addAttribute('position', new THREE.BufferAttribute(positions, 2));
+
+                var multisampleDisplayTransform = new THREE.Matrix3();
+                multisampleDisplayTransform.set(
+                    0.5, 0.0, 0.5,
+                    0.0, 0.5, 0.25,
+                    0.0, 0.0, 1.0);
+
+                var displayNoMultisamplingTransform = new THREE.Matrix3();
+                displayNoMultisamplingTransform.set(
+                    0.5, 0.0, -0.5,
+                    0.0, 0.5, 0.25,
+                    0.0, 0.0, 1.0);
+
+                var multisamplingDisplayMaterial = new THREE.RawShaderMaterial({
+                    uniforms: {
+                        posTransform: { value: multisampleDisplayTransform },
+                        uvTransform: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) }
+                    }
+                });
+
+                var noMultisamplingDisplayMaterial = new THREE.RawShaderMaterial({
+                    uniforms: {
+                        posTransform: { value: displayNoMultisamplingTransform },
+                        uvTransform: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) }
+                    }
+                });
+
+                var displayMultisampling = new THREE.Mesh(screenSpacePlaneGeometry, multisamplingDisplayMaterial);
+                var displayNoMultisampling = new THREE.Mesh(screenSpacePlaneGeometry, noMultisamplingDisplayMaterial);
+
+                scene = new THREE.Scene();
+                sceneScreen = new THREE.Scene();
+
+                sceneScreen.add(displayMultisampling);
+                sceneScreen.add(displayNoMultisampling);
+
+                // this example created to show that multisampling support for RenderTargets works fine for future use
+                // but WebGL2Render is not ready for now
+                // this custom renderer have to be removed with WebGL2Render when it will possible
+                // (WebGL2 support test inside)
+				renderer = new CustomWebGL2Renderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				container.appendChild( renderer.domElement );
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				render();
+
+			}
+
+			function render() {
+
+                renderer.render(sceneScreen, camera);
+
+            }
+
+            function CustomWebGL2Renderer() {
+
+                var _canvas = document.createElementNS( 'http://www.w3.org/1999/xhtml', 'canvas' );
+
+                var webglContextTypes = [
+                    'webgl2',
+                    'experimental-webgl2',
+                ];
+
+                var attributes = {
+                    alpha: false,
+                    depth: true,
+                    stencil: true,
+                    antialiasing: true,
+                    premultipliedAlpha: true,
+                    preserveDrawingBuffer: false,
+                    failIfMajorPerformanceCaveat: false
+                };
+
+                var _gl = null;
+
+                var _width = 512;
+                var _height = 512;
+                var _pixelRatio = 1;
+
+                _viewport = new THREE.Vector4();
+
+                for (var i = 0; i < 2; i++) {
+
+                    var contextType = webglContextTypes[ i ];
+
+                    if ((typeof WebGL2RenderingContext !== 'undefined')
+                        && (_gl = _canvas.getContext(contextType, attributes)) instanceof WebGL2RenderingContext) {
+
+                            break;
+
+                    }
+                }
+
+                if ( ! _gl ) {
+
+                    var element = document.createElement( 'div' );
+                    element.id = 'webgl-error-message';
+                    element.style.fontFamily = 'monospace';
+                    element.style.fontSize = '13px';
+                    element.style.fontWeight = 'normal';
+                    element.style.textAlign = 'center';
+                    element.style.background = '#fff';
+                    element.style.color = '#000';
+                    element.style.padding = '1.5em';
+                    element.style.width = '400px';
+                    element.style.margin = '5em auto 0';
+
+                    element.innerHTML = window.WebGLRenderingContext ? [
+                        'Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br />',
+                        'Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'
+                    ].join( '\n' ) : [
+                        'Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation" style="color:#000">WebGL</a>.<br/>',
+                        'Find out how to get it <a href="http://get.webgl.org/" style="color:#000">here</a>.'
+                    ].join( '\n' );
+
+                    document.body.appendChild( element );
+
+                }
+
+                this.domElement = _canvas;
+
+                this.context = _gl;
+
+                var _log = '';
+
+                var _displayProgram = _gl.createProgram();
+
+                var _displayVertexShader = _gl.createShader(_gl.VERTEX_SHADER);
+                _gl.shaderSource(_displayVertexShader, document.getElementById('displayVertexShader').textContent);
+                _gl.compileShader(_displayVertexShader);
+
+                _log = _gl.getShaderInfoLog(_displayVertexShader);
+                if (_log.length > 0) console.warn(_log);
+
+                var _displayFragmentShader = _gl.createShader(_gl.FRAGMENT_SHADER);
+                _gl.shaderSource(_displayFragmentShader, document.getElementById('displayFragmentShader').textContent);
+                _gl.compileShader(_displayFragmentShader);
+
+                _log = _gl.getShaderInfoLog(_displayFragmentShader);
+                if (_log.length > 0) console.warn(_log);
+
+                _gl.attachShader(_displayProgram, _displayVertexShader);
+                _gl.attachShader(_displayProgram, _displayFragmentShader);
+
+                _gl.linkProgram(_displayProgram);
+
+                _log = _gl.getProgramInfoLog(_displayProgram);
+                if (_log.length > 0) console.warn(_log);
+
+                _gl.deleteShader(_displayVertexShader);
+                _gl.deleteShader(_displayFragmentShader);
+
+                var _displayPosTransformLocation = _gl.getUniformLocation(_displayProgram, 'posTransform');
+                var _displayUvTransformLocation = _gl.getUniformLocation(_displayProgram, 'uvTransform');
+
+                var _displayVBO = [null, null];
+
+                this.setViewport = function ( x, y, width, height ) {
+
+                    _viewport.set(x, _height - y - height, width, height);
+                    _viewport.multiplyScalar(_pixelRatio);
+
+                    _gl.viewport(_viewport.x, _viewport.y, _viewport.z, _viewport.w);
+
+                }
+
+                this.setPixelRatio = function ( value ) {
+
+                    if ( value === undefined ) return;
+
+                    _pixelRatio = value;
+
+                    this.setSize( _width, _height, false );
+
+                };
+
+                this.setSize = function ( width, height, updateStyle ) {
+
+                    _width = width;
+                    _height = height;
+
+                    _canvas.width = width * _pixelRatio;
+                    _canvas.height = height * _pixelRatio;
+
+                    if ( updateStyle !== false ) {
+
+                        _canvas.style.width = width + 'px';
+                        _canvas.style.height = height + 'px';
+
+                    }
+
+                    this.setViewport( 0, 0, width, height );
+
+                };
+
+                this.clear = function () {
+                    _gl.clear(_gl.COLOR_BUFFER_BIT | _gl.DEPTH_BUFFER_BIT | _gl.STENCIL_BUFFER_BIT)
+                };
+
+                this.render = function(scene, camera, renderTarget) {
+                    // temporary dummy renderer insteadof WebGL2Renderer
+
+                    if (renderTarget !== undefined) {
+
+
+
+                    } else {
+
+                        this.clear();
+
+                        _gl.useProgram(_displayProgram);
+
+                        for (var i = 0, len = scene.children.length; i < len; i++) {
+                            var renderable = scene.children[i];
+                            var posTransform = renderable.material.uniforms.posTransform.value.elements;
+                            var uvTransform = renderable.material.uniforms.uvTransform.value.toArray();
+
+                            _gl.uniformMatrix3fv(_displayPosTransformLocation, false, posTransform);
+                            _gl.uniform4fv(_displayUvTransformLocation, uvTransform);
+
+                            var posdata = renderable.geometry.attributes.position.array;
+
+                            if ( i < _displayVBO.length && ! _displayVBO[ i ] ) {
+
+                                _displayVBO = _gl.createBuffer();
+
+                                _gl.bindBuffer(_gl.ARRAY_BUFFER, _displayVBO);
+
+                                _gl.bufferData(_gl.ARRAY_BUFFER, posdata, _gl.STATIC_DRAW);
+
+                            } else {
+
+                                _gl.bindBuffer(_gl.ARRAY_BUFFER, _displayVBO);
+
+                            }
+
+                            _gl.enableVertexAttribArray(0); // position location 0
+                            _gl.vertexAttribPointer(0, 2, _gl.FLOAT, false, 8, 0); // position location 0
+
+                            _gl.drawArrays(_gl.TRIANGLES, 0, posdata.length / 2);
+
+                            _gl.disableVertexAttribArray(0);
+                        }
+                    }
+                }
+
+            }
+
+		</script>
+	</body>
+</html>
